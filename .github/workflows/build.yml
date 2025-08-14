@@ -18,10 +18,11 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     env:
-      THEOS: ${{ github.workspace }}/theos
+      # Put Theos in a throwaway folder to avoid "already exists" collisions
+      THEOS: ${{ runner.temp }}/theos
 
     steps:
-      - name: Checkout your source
+      - name: Checkout source
         uses: actions/checkout@v4
 
       - name: Install base deps
@@ -38,31 +39,51 @@ jobs:
           sudo chmod +x /usr/local/bin/ldid
           ldid -V || true
 
+      # --- THEOS baseline ---
+      - name: Prepare THEOS dir
+        run: |
+          rm -rf "$THEOS"
+          mkdir -p "$THEOS"
+          echo "THEOS=$THEOS" >> $GITHUB_ENV
+
       - name: Fetch Theos
         run: |
           git clone --recursive --depth=1 https://github.com/theos/theos "$THEOS"
 
-      - name: Fetch toolchain (Linux → iPhoneOS)
+      # --- Toolchain (Linux -> iPhoneOS) ---
+      - name: Fetch toolchain
         run: |
+          set -eux
           mkdir -p "$THEOS/toolchain/linux/iphone"
-          curl -L -o toolchain.tar.lzma \
+          WORK="$RUNNER_TEMP/toolchain"
+          rm -rf "$WORK"
+          mkdir -p "$WORK"
+          curl -L -o "$WORK/toolchain.tar.lzma" \
             https://github.com/sbingner/llvm-project/releases/latest/download/linux-ios-arm64e-clang-toolchain.tar.lzma
-          tar --lzma -xvf toolchain.tar.lzma
-          TOOLDIR="$(find . -maxdepth 1 -type d -iname '*toolchain*' -print -quit)"
-          if [ -z "$TOOLDIR" ]; then echo "Toolchain folder not found"; exit 1; fi
-          mv "$TOOLDIR"/* "$THEOS/toolchain/linux/iphone"
+          # Some runners lack `tar --lzma`, use xz to convert then extract
+          xz --format=lzma -d "$WORK/toolchain.tar.lzma"
+          tar -xf "$WORK/toolchain.tar" -C "$WORK"
+          SRC_DIR="$(find "$WORK" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+          if [ -z "$SRC_DIR" ]; then echo "Toolchain folder not found"; exit 1; fi
+          rm -rf "$THEOS/toolchain/linux/iphone/*"
+          cp -a "$SRC_DIR/"* "$THEOS/toolchain/linux/iphone/"
 
-      # ✅ Fetch SDKs via Git LFS (reliable)
-      - name: Fetch iOS SDKs (Git LFS)
+      # --- SDKs via Git LFS (robust) ---
+      - name: Fetch iOS SDKs (Git LFS, idempotent)
         run: |
+          set -eux
           git lfs install
+          rm -rf "$THEOS/sdks"           # always start clean
           git clone --depth=1 https://github.com/theos/sdks.git "$THEOS/sdks"
           cd "$THEOS/sdks"
           git lfs pull
           ls -lah
 
+      # --- Build ---
       - name: Build .deb (rootless)
         working-directory: tweak/W2Like
+        env:
+          THEOS: ${{ env.THEOS }}
         run: |
           make clean
           make package
