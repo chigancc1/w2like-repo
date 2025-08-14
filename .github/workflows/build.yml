@@ -29,9 +29,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             build-essential fakeroot rsync curl perl unzip git xz-utils \
-            libplist-utils ca-certificates dpkg-dev
+            libplist-utils ca-certificates dpkg-dev git-lfs
 
-      # ⬇️ Install ldid directly from Procursus (no action, no tag needed)
       - name: Install ldid (Procursus)
         run: |
           sudo curl -L -o /usr/local/bin/ldid \
@@ -39,7 +38,6 @@ jobs:
           sudo chmod +x /usr/local/bin/ldid
           ldid -V || true
 
-      # Theos + toolchain + SDKs
       - name: Fetch Theos
         run: |
           git clone --recursive --depth=1 https://github.com/theos/theos "$THEOS"
@@ -54,11 +52,14 @@ jobs:
           if [ -z "$TOOLDIR" ]; then echo "Toolchain folder not found"; exit 1; fi
           mv "$TOOLDIR"/* "$THEOS/toolchain/linux/iphone"
 
-      - name: Fetch iOS SDK (16.5)
+      # ✅ Fetch SDKs via Git LFS (reliable)
+      - name: Fetch iOS SDKs (Git LFS)
         run: |
-          mkdir -p "$THEOS/sdks"
-          curl -L https://github.com/theos/sdks/releases/download/SDKs/iPhoneOS16.5.sdk.tar.xz \
-            | tar -xJ -C "$THEOS/sdks"
+          git lfs install
+          git clone --depth=1 https://github.com/theos/sdks.git "$THEOS/sdks"
+          cd "$THEOS/sdks"
+          git lfs pull
+          ls -lah
 
       - name: Build .deb (rootless)
         working-directory: tweak/W2Like
