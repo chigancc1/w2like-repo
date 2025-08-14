@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout source
         uses: actions/checkout@v4
 
       - name: Install base deps
@@ -26,30 +26,36 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y git make perl python3 ca-certificates dpkg-dev build-essential curl unzip
 
-      - name: Install ldid (Procursus release)
+      # ldid via Procursus (Ubuntu repos don't have it)
+      - name: Install ldid
         run: |
           sudo curl -L -o /usr/local/bin/ldid \
             https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64
           sudo chmod +x /usr/local/bin/ldid
           ldid -V || true
 
-      - name: Setup Theos (robust clone)
+      # 🔧 Use a maintained action to set up Theos + toolchain + SDKs (handles submodules/cache)
+      - name: Setup Theos
+        uses: Randomblock1/setup-theos@v2
+        with:
+          platform: linux
+          toolchain: latest
+
+      # Make sure THEOS is exported for the build step (the action sets it; we also guard/fallback)
+      - name: Confirm THEOS path
         run: |
-          set -eux
-          git config --global url.https://github.com/.insteadOf git://github.com/
-          git clone --depth=1 https://github.com/theos/theos.git ~/theos
-          cd ~/theos
-          # pull submodules shallow to avoid auth prompts/rate blips
-          git submodule update --init --recursive --depth 1
-          # fetch Linux toolchain + SDKs
-          git clone --depth=1 https://github.com/theos/toolchain-linux.git ~/theos/toolchain/linux/iphone
-          git clone --depth=1 https://github.com/theos/sdks.git ~/theos/sdks
+          echo "THEOS from env: ${THEOS}"
+          if [ -z "${THEOS}" ] || [ ! -d "${THEOS}" ]; then
+            echo "THEOS not set by action; falling back to \$HOME/theos"
+            echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+          else
+            echo "THEOS=${THEOS}" >> $GITHUB_ENV
+          fi
 
       - name: Build .deb (rootless)
-        env:
-          THEOS: /home/runner/theos
         working-directory: tweak/W2Like
         run: |
+          echo "Using THEOS at: $THEOS"
           make package
           ls -lah packages
 
