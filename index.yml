@@ -1,0 +1,39 @@
+name: Build APT index
+on:
+  push:
+    paths:
+      - 'debs/**'
+      - '.github/workflows/index.yml'
+  workflow_dispatch:
+
+jobs:
+  index:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dpkg-scanpackages
+        run: sudo apt-get update && sudo apt-get install -y dpkg-dev
+      - name: Build Packages + Release
+        run: |
+          mkdir -p dists/stable/main/binary-iphoneos-arm64
+          dpkg-scanpackages -m ./debs > dists/stable/main/binary-iphoneos-arm64/Packages
+          gzip -f -c dists/stable/main/binary-iphoneos-arm64/Packages > dists/stable/main/binary-iphoneos-arm64/Packages.gz
+          cat > dists/stable/Release <<'EOF'
+          Origin: chigancc1
+          Label: chigancc1 Repo
+          Suite: stable
+          Codename: stable
+          Architectures: iphoneos-arm64
+          Components: main
+          Description: iOS tweaks
+          EOF
+      - name: Commit and push index
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dists/stable/main/binary-iphoneos-arm64/Packages*
+          git add dists/stable/Release
+          git commit -m "Auto-index APT repo" || echo "No changes"
+          git push
