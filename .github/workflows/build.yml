@@ -1,57 +1,64 @@
 name: Build .deb (Theos)
 
 on:
-  push:
-    paths:
-      - '**.xm'
-      - '**.m'
-      - '**.mm'
-      - '**.h'
-      - 'tweak/**'
-      - 'prefs/**'
-      - 'debian/**'
-      - '.github/workflows/build.yml'
   workflow_dispatch:
+  push:
+    branches: [ "main" ]
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+    env:
+      THEOS: ${{ github.workspace }}/theos
 
     steps:
       - name: Checkout your source
         uses: actions/checkout@v4
 
-      - name: Install base deps
+      - name: Install base deps (no 'lzma'!)
         run: |
           sudo apt-get update
-          sudo apt-get install -y git make perl python3 ca-certificates dpkg-dev build-essential curl unzip xz-utils fakeroot
+          sudo apt-get install -y \
+            build-essential fakeroot rsync curl perl unzip git xz-utils \
+            libplist-utils ca-certificates
 
-      # ldid isn't in Ubuntu repos; grab the official static binary
+      # ldid is needed to sign binaries during packaging
       - name: Install ldid (Procursus)
+        uses: MOZGIII/install-ldid-action@v1
+        # optional: pin a tag with: with: { tag: v2.1.5-procursus2 }
+
+      - name: Fetch Theos
         run: |
-          sudo curl -L -o /usr/local/bin/ldid https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64
-          sudo chmod +x /usr/local/bin/ldid
-          ldid -V || true
+          git clone --recursive https://github.com/theos/theos "$THEOS"
 
-      # One-liner Theos + toolchain setup (maintained action)
-      - name: Install Theos + toolchain
-        uses: Randomblock1/theos-action@v1  # marketplace action
-        with:
-          theos-dir: theos
-          theos-src: https://github.com/theos/theos
+      - name: Fetch toolchain (Linux x86_64 → iPhoneOS)
+        run: |
+          mkdir -p "$THEOS/toolchain/linux/iphone"
+          curl -L -o toolchain.tar.lzma \
+            https://github.com/sbingner/llvm-project/releases/latest/download/linux-ios-arm64e-clang-toolchain.tar.lzma
+          # extract .lzma (xz-utils handles this)
+          tar --lzma -xvf toolchain.tar.lzma
+          TOOLDIR="$(find . -maxdepth 1 -type d -iname '*toolchain*' -print -quit)"
+          if [ -z "$TOOLDIR" ]; then echo "Toolchain folder not found"; exit 1; fi
+          mv "$TOOLDIR"/* "$THEOS/toolchain/linux/iphone"
 
-      - name: Set THEOS env
-        run: echo "THEOS=${{ github.workspace }}/theos" >> $GITHUB_ENV
+      - name: Fetch iOS SDK (e.g., 16.5)
+        run: |
+          mkdir -p "$THEOS/sdks"
+          curl -L https://github.com/theos/sdks/releases/download/SDKs/iPhoneOS16.5.sdk.tar.xz \
+            | tar -xJ -C "$THEOS/sdks"
 
-      - name: Build .deb (rootless)
+      # If your tweak lives elsewhere, change working-directory below.
+      - name: Build .deb (rootless-ready)
         working-directory: tweak/W2Like
+        env:
+          THEOS: ${{ github.workspace }}/theos
         run: |
-          echo "Using THEOS at: $THEOS"
+          make clean
           make package
-          ls -lah packages
 
       - name: Upload .deb artifact
         uses: actions/upload-artifact@v4
         with:
           name: w2like-deb
-          path: tweak/W2Like/packages/*.deb
+          path: "**/*.deb"
