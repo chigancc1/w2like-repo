@@ -24,9 +24,8 @@ jobs:
       - name: Install base deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y git make perl python3 ca-certificates dpkg-dev build-essential curl unzip fakeroot
+          sudo apt-get install -y git make perl python3 ca-certificates dpkg-dev build-essential curl unzip xz-utils fakeroot
 
-      # Install ldid (Ubuntu repos don't have it)
       - name: Install ldid (Procursus release)
         run: |
           sudo curl -L -o /usr/local/bin/ldid \
@@ -34,34 +33,28 @@ jobs:
           sudo chmod +x /usr/local/bin/ldid
           ldid -V || true
 
-      # Fetch Theos itself (with submodules) using GitHub's own checkout action
+      # --- Prepare THEOS + toolchain + SDKs (no third-party actions, no submodule headaches) ---
       - name: Fetch Theos
-        uses: actions/checkout@v4
-        with:
-          repository: theos/theos
-          path: theos
-          submodules: recursive
-          fetch-depth: 1
+        run: |
+          THEOS_DIR="${{ github.workspace }}/theos"
+          mkdir -p "$THEOS_DIR"
+          git clone --recursive --depth=1 https://github.com/theos/theos.git "$THEOS_DIR"
+          echo "THEOS=$THEOS_DIR" >> $GITHUB_ENV
 
-      # Fetch the Linux toolchain
-      - name: Fetch toolchain (linux)
-        uses: actions/checkout@v4
-        with:
-          repository: theos/toolchain-linux
-          path: theos/toolchain/linux/iphone
-          fetch-depth: 1
+      - name: Fetch toolchain tarball (linux x86_64 iphoneos)
+        run: |
+          set -eux
+          mkdir -p "$THEOS/toolchain"
+          curl -L \
+            -o "$THEOS/toolchain/linux-x86_64-iphoneos.tar.xz" \
+            https://github.com/theos/toolchain/releases/latest/download/linux-x86_64-iphoneos.tar.xz
+          tar -xJf "$THEOS/toolchain/linux-x86_64-iphoneos.tar.xz" -C "$THEOS/toolchain"
 
-      # Fetch iOS SDKs (headers only)
       - name: Fetch SDKs
-        uses: actions/checkout@v4
-        with:
-          repository: theos/sdks
-          path: theos/sdks
-          fetch-depth: 1
+        run: |
+          git clone --depth=1 https://github.com/theos/sdks.git "$THEOS/sdks"
 
-      - name: Set THEOS env
-        run: echo "THEOS=${{ github.workspace }}/theos" >> $GITHUB_ENV
-
+      # --- Build ---
       - name: Build .deb (rootless)
         working-directory: tweak/W2Like
         run: |
