@@ -26,35 +26,23 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y git make perl python3 ca-certificates dpkg-dev build-essential curl unzip xz-utils fakeroot
 
-      - name: Install ldid (Procursus release)
+      # ldid isn't in Ubuntu repos; grab the official static binary
+      - name: Install ldid (Procursus)
         run: |
-          sudo curl -L -o /usr/local/bin/ldid \
-            https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64
+          sudo curl -L -o /usr/local/bin/ldid https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64
           sudo chmod +x /usr/local/bin/ldid
           ldid -V || true
 
-      # --- Prepare THEOS + toolchain + SDKs (no third-party actions, no submodule headaches) ---
-      - name: Fetch Theos
-        run: |
-          THEOS_DIR="${{ github.workspace }}/theos"
-          mkdir -p "$THEOS_DIR"
-          git clone --recursive --depth=1 https://github.com/theos/theos.git "$THEOS_DIR"
-          echo "THEOS=$THEOS_DIR" >> $GITHUB_ENV
+      # One-liner Theos + toolchain setup (maintained action)
+      - name: Install Theos + toolchain
+        uses: Randomblock1/theos-action@v1  # marketplace action
+        with:
+          theos-dir: theos
+          theos-src: https://github.com/theos/theos
 
-      - name: Fetch toolchain tarball (linux x86_64 iphoneos)
-        run: |
-          set -eux
-          mkdir -p "$THEOS/toolchain"
-          curl -L \
-            -o "$THEOS/toolchain/linux-x86_64-iphoneos.tar.xz" \
-            https://github.com/theos/toolchain/releases/latest/download/linux-x86_64-iphoneos.tar.xz
-          tar -xJf "$THEOS/toolchain/linux-x86_64-iphoneos.tar.xz" -C "$THEOS/toolchain"
+      - name: Set THEOS env
+        run: echo "THEOS=${{ github.workspace }}/theos" >> $GITHUB_ENV
 
-      - name: Fetch SDKs
-        run: |
-          git clone --depth=1 https://github.com/theos/sdks.git "$THEOS/sdks"
-
-      # --- Build ---
       - name: Build .deb (rootless)
         working-directory: tweak/W2Like
         run: |
