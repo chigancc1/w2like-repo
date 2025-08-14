@@ -21,7 +21,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install base deps (no ldid from apt)
+      - name: Install base deps
         run: |
           sudo apt-get update
           sudo apt-get install -y git make perl python3 ca-certificates dpkg-dev build-essential curl unzip
@@ -33,9 +33,15 @@ jobs:
           sudo chmod +x /usr/local/bin/ldid
           ldid -V || true
 
-      - name: Setup Theos (Linux toolchain + SDKs)
+      - name: Setup Theos (robust clone)
         run: |
-          git clone --recursive https://github.com/theos/theos.git ~/theos
+          set -eux
+          git config --global url.https://github.com/.insteadOf git://github.com/
+          git clone --depth=1 https://github.com/theos/theos.git ~/theos
+          cd ~/theos
+          # pull submodules shallow to avoid auth prompts/rate blips
+          git submodule update --init --recursive --depth 1
+          # fetch Linux toolchain + SDKs
           git clone --depth=1 https://github.com/theos/toolchain-linux.git ~/theos/toolchain/linux/iphone
           git clone --depth=1 https://github.com/theos/sdks.git ~/theos/sdks
 
