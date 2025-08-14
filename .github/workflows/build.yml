@@ -18,39 +18,49 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout source
+      - name: Checkout your source
         uses: actions/checkout@v4
 
       - name: Install base deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y git make perl python3 ca-certificates dpkg-dev build-essential curl unzip
+          sudo apt-get install -y git make perl python3 ca-certificates dpkg-dev build-essential curl unzip fakeroot
 
-      # ldid via Procursus (Ubuntu repos don't have it)
-      - name: Install ldid
+      # Install ldid (Ubuntu repos don't have it)
+      - name: Install ldid (Procursus release)
         run: |
           sudo curl -L -o /usr/local/bin/ldid \
             https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64
           sudo chmod +x /usr/local/bin/ldid
           ldid -V || true
 
-      # 🔧 Use a maintained action to set up Theos + toolchain + SDKs (handles submodules/cache)
-      - name: Setup Theos
-        uses: Randomblock1/setup-theos@v2
+      # Fetch Theos itself (with submodules) using GitHub's own checkout action
+      - name: Fetch Theos
+        uses: actions/checkout@v4
         with:
-          platform: linux
-          toolchain: latest
+          repository: theos/theos
+          path: theos
+          submodules: recursive
+          fetch-depth: 1
 
-      # Make sure THEOS is exported for the build step (the action sets it; we also guard/fallback)
-      - name: Confirm THEOS path
-        run: |
-          echo "THEOS from env: ${THEOS}"
-          if [ -z "${THEOS}" ] || [ ! -d "${THEOS}" ]; then
-            echo "THEOS not set by action; falling back to \$HOME/theos"
-            echo "THEOS=$HOME/theos" >> $GITHUB_ENV
-          else
-            echo "THEOS=${THEOS}" >> $GITHUB_ENV
-          fi
+      # Fetch the Linux toolchain
+      - name: Fetch toolchain (linux)
+        uses: actions/checkout@v4
+        with:
+          repository: theos/toolchain-linux
+          path: theos/toolchain/linux/iphone
+          fetch-depth: 1
+
+      # Fetch iOS SDKs (headers only)
+      - name: Fetch SDKs
+        uses: actions/checkout@v4
+        with:
+          repository: theos/sdks
+          path: theos/sdks
+          fetch-depth: 1
+
+      - name: Set THEOS env
+        run: echo "THEOS=${{ github.workspace }}/theos" >> $GITHUB_ENV
 
       - name: Build .deb (rootless)
         working-directory: tweak/W2Like
