@@ -16,26 +16,37 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout
+      - name: Checkout your source
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install base deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y git make perl python3 fakeroot ldid dpkg-dev ca-certificates
+          sudo apt-get install -y git make perl python3 ca-certificates dpkg-dev build-essential curl unzip xz-utils fakeroot
 
-      - name: Setup Theos (Linux toolchain + SDKs)
+      # ldid isn't in Ubuntu repos; grab the official static binary
+      - name: Install ldid (Procursus)
         run: |
-          git clone --recursive https://github.com/theos/theos.git ~/theos
-          git clone --depth=1 https://github.com/theos/toolchain-linux.git ~/theos/toolchain/linux/iphone
-          git clone --depth=1 https://github.com/theos/sdks.git ~/theos/sdks
+          sudo curl -L -o /usr/local/bin/ldid https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64
+          sudo chmod +x /usr/local/bin/ldid
+          ldid -V || true
+
+      # One-liner Theos + toolchain setup (maintained action)
+      - name: Install Theos + toolchain
+        uses: Randomblock1/theos-action@v1  # marketplace action
+        with:
+          theos-dir: theos
+          theos-src: https://github.com/theos/theos
+
+      - name: Set THEOS env
+        run: echo "THEOS=${{ github.workspace }}/theos" >> $GITHUB_ENV
 
       - name: Build .deb (rootless)
-        env:
-          THEOS: /home/runner/theos
         working-directory: tweak/W2Like
         run: |
+          echo "Using THEOS at: $THEOS"
           make package
           ls -lah packages
 
