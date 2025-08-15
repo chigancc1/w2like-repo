@@ -1,21 +1,29 @@
-name: Build APT index
+name: Rebuild APT index
 on:
-  push:
-    paths:
-      - 'debs/*.deb'
-      - 'index.sh'
+  workflow_dispatch:
 
 jobs:
-  index:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Make index
-        run: bash index.sh
-      - name: Commit & push
+        with:
+          persist-credentials: false
+
+      - name: Build Packages index
         run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@users.noreply.github.com"
-          git add -A
-          git commit -m "Update Packages index [skip ci]" || exit 0
-          git push
+          bash index.sh
+
+      - name: Commit & push changes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            git config user.name  "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git commit -m "Update APT index"
+            git push
+          else
+            echo "No changes."
+          fi
