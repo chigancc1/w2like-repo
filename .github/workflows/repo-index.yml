@@ -2,37 +2,62 @@ name: Rebuild APT index
 
 on:
   workflow_dispatch:
+  # Optional: auto-run when you add/replace .deb files
+  push:
+    branches: [ "main" ]
+    paths:
+      - "debs/**/*.deb"
 
-# ⬅️ allow the workflow to push back to the repo
+# Allow this workflow to push back to the repo
 permissions:
   contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # optional, but nice to have
+            # We'll push with our own token, so don't keep the default creds
+            persist-credentials: false
+            # We need history to push back to the same branch
+            fetch-depth: 0
 
-      - name: Build APT index (Packages/Packages.gz)
-        run: bash index.sh
-
-      - name: Commit & push changes (if any)
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          BRANCH: ${{ github.ref_name }}
+      - name: Rebuild Packages index
+        shell: bash
         run: |
-          # Only commit if there are changes
-          if ! git diff --quiet; then
+          set -euxo pipefail
+
+          # Ensure directories exist
+          mkdir -p debs
+          mkdir -p dists/stable/main/binary-iphoneos-arm64
+
+          # Build index from debs/
+          dpkg-scanpackages -m ./debs > dists/stable/main/binary-iphoneos-arm64/Packages
+          gzip -kf dists/stable/main/binary-iphoneos-arm64/Packages
+
+          # ALSO copy to repo root so /Packages and /Packages.gz work
+          cp dists/stable/main/binary-iphoneos-arm64/Packages* .
+
+      - name: Commit & push (if any)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH:   ${{ github.ref_name }}
+          REPO:     ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          # Stage only what we touched
+          git add dists/ Packages Packages.gz || true
+
+          if ! git diff --cached --quiet; then
             git config user.name  "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add -A
             git commit -m "Update APT index"
-
-            # Push using the token in the URL (avoids interactive auth)
-            git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${REPO}.git" HEAD:${BRANCH}
+            git push "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" HEAD:${BRANCH}
           else
             echo "No changes to commit."
           fi
